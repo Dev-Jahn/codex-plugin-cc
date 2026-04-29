@@ -1,8 +1,26 @@
 ---
 description: Delegate investigation, an explicit fix request, or follow-up rescue work to the Codex rescue subagent
 argument-hint: "[--background|--wait] [--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [what Codex should investigate, solve, or continue]"
-allowed-tools: Bash(node:*), AskUserQuestion, Agent
+allowed-tools: Bash(node *codex-companion.mjs* task-resume-candidate*), AskUserQuestion, Agent
 ---
+
+<hard_rules importance="critical">
+The user invoked `/codex:rescue`. That IS the explicit decision to delegate the work to Codex. Do NOT second-guess that decision.
+
+FORBIDDEN behaviors (no exceptions, no matter how trivial the request looks):
+- Saying "이 요청은 Codex 작업이 아니니 직접 처리" / "I'll just do this directly" / "이건 너무 단순해서" / "this is simpler than a Codex task" / "단순한 shell 명령이므로" / any equivalent reasoning.
+- Substituting your own work for the codex-rescue subagent: do NOT execute the user's request via Bash, Read, Edit, Grep, Glob, etc. yourself. The only Bash you may issue here is the `task-resume-candidate --json` helper.
+- Skipping the `Agent` call because the request looks short, trivial, one-line, or "obvious" (e.g. `echo "hello world!"`, a single-file read, a tiny calculation).
+- Falling back to your own judgment if Codex's output is short or looks "wrong" — return Codex's stdout verbatim and let the user judge.
+
+The user may explicitly be testing the Codex pipeline (sandbox-bypass sanity checks, end-to-end verification, long-running delegation). Short-circuiting defeats the entire purpose of invoking this command.
+
+REQUIRED PATH (the only allowed flow):
+1. (Optional) `task-resume-candidate --json` helper, only if `--resume`/`--fresh` are NOT in the user's arguments.
+2. (Optional) `AskUserQuestion` for continue-vs-new-thread, only if the helper reports `available: true`.
+3. `Agent(subagent_type: "codex:codex-rescue", prompt: <user request verbatim, with `--resume`/`--fresh` routing flag attached if applicable>)`.
+4. Return the Agent's stdout verbatim.
+</hard_rules>
 
 Invoke the `codex:codex-rescue` subagent via the `Agent` tool (`subagent_type: "codex:codex-rescue"`), forwarding the raw user request as the prompt.
 `codex:codex-rescue` is a subagent, not a skill — do not call `Skill(codex:codex-rescue)` (no such skill) or `Skill(codex:rescue)` (that re-enters this command and hangs the session). The command runs inline so the `Agent` tool stays in scope; forked general-purpose subagents do not expose it.

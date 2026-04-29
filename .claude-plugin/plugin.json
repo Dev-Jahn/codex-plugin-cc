@@ -1,6 +1,6 @@
 {
   "name": "codex",
-  "version": "1.0.5-jahn",
+  "version": "1.0.5-jahn.1",
   "description": "Personal fork of openai/codex-plugin-cc with OS-level sandbox enforcement removed and replaced with prompt-level self-enforcement, for environments where bubblewrap cannot run (cloud containers, restricted kernels).",
   "author": {
     "name": "Dev-Jahn",

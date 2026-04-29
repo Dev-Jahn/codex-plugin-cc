@@ -2,8 +2,25 @@
 description: Run a Codex code review against local git state
 argument-hint: '[--wait|--background] [--base <ref>] [--scope auto|working-tree|branch]'
 disable-model-invocation: false
-allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
+allowed-tools: Read, Glob, Grep, Bash(node *codex-companion.mjs* review*), Bash(git status*), Bash(git diff*), AskUserQuestion
 ---
+
+<hard_rules importance="critical">
+The user invoked `/codex:review`. That IS the explicit decision to delegate the review to Codex. Do NOT second-guess.
+
+FORBIDDEN (no exceptions):
+- Performing the review yourself with Read/Grep/Glob and presenting your own findings instead of running codex-companion.
+- Skipping the codex-companion call because the change looks "small", "trivial", or "obviously fine".
+- Paraphrasing, summarizing, condensing, or rewriting Codex's output before returning it.
+- Drafting your own findings even if Codex returns nothing/empty — relay verbatim and let the user decide.
+- Read/Grep/Glob are allowed ONLY for the optional sizing inspection step; they are NOT a substitute for the Codex call.
+
+REQUIRED PATH (the only allowed flow):
+1. Sizing inspection: `git status`/`git diff --shortstat` etc. as the body specifies (optional but recommended for foreground/background decision).
+2. `AskUserQuestion` once for foreground/background, only if neither `--wait` nor `--background` was supplied.
+3. `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" review "$ARGUMENTS"` (foreground or `run_in_background: true`).
+4. Return the command stdout verbatim.
+</hard_rules>
 
 Run a Codex review through the shared built-in reviewer.
 
