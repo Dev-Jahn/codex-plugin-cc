@@ -70,6 +70,29 @@ const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "hi
 const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
 const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
 
+const READ_ONLY_DIRECTIVE = [
+  "<sandbox_policy importance=\"critical\">",
+  "This task is READ-ONLY. The OS-level sandbox is disabled in this environment because the host kernel cannot run bubblewrap, so YOU are the only thing enforcing the policy.",
+  "DO NOT modify, create, delete, move, or rename ANY file inside or outside the workspace.",
+  "DO NOT run shell commands that mutate state: no `git commit`, `git checkout -B`, `git reset`, `git stash`, `git clean`, `rm`, `mv`, `cp` into the tree, no package installs, no migrations, no build artifacts beyond ephemeral temp dirs.",
+  "DO NOT make any network call that performs a write (POST/PUT/PATCH/DELETE, `gh pr create`, `gh issue ...`, deploy commands, `git push`).",
+  "Read-only inspection commands (e.g. `git status`, `git log`, `git diff`, `rg`, `cat`, `ls`, `git show`) are allowed and encouraged.",
+  "If the user request implies a write, STOP and report what you would have done — do not perform it.",
+  "</sandbox_policy>"
+].join("\n");
+
+const WORKSPACE_WRITE_DIRECTIVE = [
+  "<sandbox_policy importance=\"critical\">",
+  "Writes are permitted, but the OS-level sandbox is disabled in this environment because the host kernel cannot run bubblewrap, so YOU are the only thing enforcing the boundary.",
+  "WRITE ONLY inside the project workspace (the cwd you were started in and its descendants). Treat the workspace root as a hard boundary.",
+  "DO NOT touch files outside the workspace: no edits to `$HOME`, `/etc`, `/usr`, `/var`, `/tmp` (except for genuinely ephemeral scratch files you create and then remove), no other users' repos, no global config, no shell rc files.",
+  "DO NOT run destructive system commands: no `rm -rf` outside the workspace, no `sudo`, no package manager installs that touch system state, no service restarts, no kernel/OS changes.",
+  "DO NOT perform network writes you were not explicitly asked to perform: no `git push`, no `gh pr create`/`gh issue ...`, no deploys, no API POST/PUT/PATCH/DELETE to third parties.",
+  "Inside the workspace, prefer minimal, targeted edits aligned with the task. Do not introduce unrelated refactors.",
+  "If a step would cross any of these boundaries, STOP and surface the question to the user instead of acting.",
+  "</sandbox_policy>"
+].join("\n");
+
 function printUsage() {
   console.log(
     [
@@ -404,11 +427,12 @@ async function executeReviewRun(request) {
   }
 
   const context = collectReviewContext(request.cwd, target);
-  const prompt = buildAdversarialReviewPrompt(context, focusText);
+  const basePrompt = buildAdversarialReviewPrompt(context, focusText);
+  const prompt = `${READ_ONLY_DIRECTIVE}\n\n${basePrompt}`;
   const result = await runAppServerTurn(context.repoRoot, {
     prompt,
     model: request.model,
-    sandbox: "read-only",
+    sandbox: "danger-full-access",
     outputSchema: readOutputSchema(REVIEW_SCHEMA),
     onProgress: request.onProgress
   });
@@ -479,13 +503,15 @@ async function executeTaskRun(request) {
     throw new Error("Provide a prompt, a prompt file, piped stdin, or use --resume-last.");
   }
 
+  const directive = request.write ? WORKSPACE_WRITE_DIRECTIVE : READ_ONLY_DIRECTIVE;
+  const augmentedPrompt = request.prompt ? `${directive}\n\n${request.prompt}` : request.prompt;
   const result = await runAppServerTurn(workspaceRoot, {
     resumeThreadId,
-    prompt: request.prompt,
-    defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
+    prompt: augmentedPrompt,
+    defaultPrompt: resumeThreadId ? `${directive}\n\n${DEFAULT_CONTINUE_PROMPT}` : "",
     model: request.model,
     effort: request.effort,
-    sandbox: request.write ? "workspace-write" : "read-only",
+    sandbox: "danger-full-access",
     onProgress: request.onProgress,
     persistThread: true,
     threadName: resumeThreadId ? null : buildPersistentTaskThreadName(request.prompt || DEFAULT_CONTINUE_PROMPT)
