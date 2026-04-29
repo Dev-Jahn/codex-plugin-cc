@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MARKETPLACE_REPO: Dev-Jahn/jahns-cc-marketplace
-      PLUGIN_NAME: codex-no-sandbox
+      PLUGIN_NAME: codex
       MARKETPLACE_FILE: .claude-plugin/marketplace.json
     steps:
       - name: Resolve target SHA and version
