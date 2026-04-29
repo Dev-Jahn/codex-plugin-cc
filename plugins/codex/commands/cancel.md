@@ -1,7 +1,7 @@
 ---
 description: Cancel an active background Codex job in this repository
 argument-hint: '[job-id]'
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash(node:*)
 ---
 
