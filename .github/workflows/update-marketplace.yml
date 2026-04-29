@@ -1,0 +1,100 @@
+name: Update jahns-cc-marketplace on release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to publish (default: the SHA that triggered this run)"
+        required: false
+        type: string
+      version:
+        description: "Version string for the marketplace entry (default: release tag without leading v)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-marketplace:
+    runs-on: ubuntu-latest
+    env:
+      MARKETPLACE_REPO: Dev-Jahn/jahns-cc-marketplace
+      PLUGIN_NAME: codex-no-sandbox
+      MARKETPLACE_FILE: .claude-plugin/marketplace.json
+    steps:
+      - name: Resolve target SHA and version
+        id: meta
+        run: |
+          set -euo pipefail
+          input_sha='${{ inputs.sha }}'
+          target_sha="${input_sha:-${{ github.sha }}}"
+          input_version='${{ inputs.version }}'
+          tag='${{ github.event.release.tag_name }}'
+          target_version="${input_version:-${tag#v}}"
+          echo "sha=${target_sha}" >> "$GITHUB_OUTPUT"
+          echo "version=${target_version}" >> "$GITHUB_OUTPUT"
+          echo "Target SHA:     ${target_sha}"
+          echo "Target version: ${target_version:-<unset, will keep existing>}"
+
+      - name: Check out marketplace repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MARKETPLACE_REPO }}
+          token: ${{ secrets.MARKETPLACE_PUSH_TOKEN }}
+          path: marketplace
+
+      - name: Patch marketplace.json
+        working-directory: marketplace
+        env:
+          TARGET_SHA: ${{ steps.meta.outputs.sha }}
+          TARGET_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          file="$MARKETPLACE_FILE"
+          if [[ ! -f "$file" ]]; then
+            echo "::error file=$file::marketplace manifest not found"
+            exit 1
+          fi
+          if ! jq -e --arg name "$PLUGIN_NAME" \
+            'any(.plugins[]; .name == $name)' "$file" > /dev/null; then
+            echo "::error::No plugin entry named '$PLUGIN_NAME' in $file"
+            exit 1
+          fi
+          if [[ -n "$TARGET_VERSION" ]]; then
+            jq --arg name "$PLUGIN_NAME" --arg sha "$TARGET_SHA" --arg version "$TARGET_VERSION" \
+              '(.plugins[] | select(.name == $name) | .source.sha) = $sha
+               | (.plugins[] | select(.name == $name) | .version) = $version' \
+              "$file" > "$file.tmp"
+          else
+            jq --arg name "$PLUGIN_NAME" --arg sha "$TARGET_SHA" \
+              '(.plugins[] | select(.name == $name) | .source.sha) = $sha' \
+              "$file" > "$file.tmp"
+          fi
+          mv "$file.tmp" "$file"
+          echo "--- updated entry ---"
+          jq --arg name "$PLUGIN_NAME" '.plugins[] | select(.name == $name)' "$file"
+
+      - name: Commit and push
+        working-directory: marketplace
+        env:
+          TARGET_SHA: ${{ steps.meta.outputs.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- "$MARKETPLACE_FILE"; then
+            echo "marketplace.json is already up to date — nothing to commit."
+            exit 0
+          fi
+          short_sha="${TARGET_SHA:0:7}"
+          subject="Bump ${PLUGIN_NAME} to ${short_sha}"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            subject="${subject} (release ${RELEASE_TAG})"
+          fi
+          git add "$MARKETPLACE_FILE"
+          git commit -m "$subject"
+          git push
