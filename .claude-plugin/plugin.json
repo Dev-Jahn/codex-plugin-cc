@@ -1,6 +1,6 @@
 {
   "name": "codex-no-sandbox",
-  "version": "1.0.4-no-sandbox",
+  "version": "1.0.4-no-sandbox.1",
   "description": "Fork of openai/codex-plugin-cc with OS-level sandbox enforcement removed and replaced with prompt-level self-enforcement, for environments where bubblewrap cannot run (cloud containers, restricted kernels).",
   "author": {
     "name": "Dev-Jahn",
